@@ -1,0 +1,1865 @@
+--
+-- PostgreSQL database dump
+--
+
+-- Dumped from database version 13.1
+-- Dumped by pg_dump version 13.1
+
+-- Started on 2021-02-05 14:12:59
+
+SET statement_timeout = 0;
+SET lock_timeout = 0;
+SET idle_in_transaction_session_timeout = 0;
+SET client_encoding = 'UTF8';
+SET standard_conforming_strings = on;
+SELECT pg_catalog.set_config('search_path', '', false);
+SET check_function_bodies = false;
+SET xmloption = content;
+SET client_min_messages = warning;
+SET row_security = off;
+
+--
+-- TOC entry 669 (class 1247 OID 17222)
+-- Name: economic_type; Type: TYPE; Schema: public; Owner: postgres
+--
+
+CREATE TYPE public.economic_type AS ENUM (
+    'розвинена',
+    'середньорозвинена',
+    'перехідна',
+    'розвивається',
+    'централізоване управління'
+);
+
+
+ALTER TYPE public.economic_type OWNER TO postgres;
+
+--
+-- TOC entry 247 (class 1255 OID 17477)
+-- Name: checks_date(); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.checks_date() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+declare date_now date;
+begin
+select DateOfEntry into date_now from internationalOrganizations
+where IdInternationalOrganizations = NEW.IdInternationalOrganizations;
+if date_now > current_date then
+raise exception 'Перевірте правильність введеної дати';
+end if ;
+return new;
+end
+$$;
+
+
+ALTER FUNCTION public.checks_date() OWNER TO postgres;
+
+--
+-- TOC entry 245 (class 1255 OID 17494)
+-- Name: delete_countries(); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.delete_countries() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+INSERT INTO rezerv(rez_date_event, rez_event, rez_tm_event,
+rez_c_NameCountries, rez_c_Capital, rez_c_Language, rez_c_Square)
+VALUES(CURRENT_DATE, 'DELETE', 'BEFORE', OLD.NameCountries, OLD.CapitalCountries,
+OLD.NationalLanguage, OLD.SquareCountries);
+RETURN OLD;
+END;
+$$;
+
+
+ALTER FUNCTION public.delete_countries() OWNER TO postgres;
+
+--
+-- TOC entry 246 (class 1255 OID 17475)
+-- Name: instate(); Type: PROCEDURE; Schema: public; Owner: postgres
+--
+
+CREATE PROCEDURE public.instate()
+    LANGUAGE sql
+    AS $$
+CREATE TABLE IF NOT EXISTS copy_states(
+ 	copy_IdStates serial not null unique,
+	copy_NameStates character varying(45) not null unique,
+	copy_CapitalStates character varying(45) not null,
+	copy_PopulationStates numeric(9,3) not null default '83286.73',
+	copy_NationalLanguage character varying(25) not null default 'Англійська',
+	copy_EconomicTypologyOfStates economic_type not null default 'середньорозвинена',
+	copy_LargestCity character varying(45) null,
+	copy_SquareStates decimal(9,3) not null default '485.963',
+	copy_DryLandStates decimal(5,3) not null default '35.5',
+	copy_AquatoriumStates decimal(5,3) not null default '35.3',
+	copy_AerotoriaStates decimal(5,3) not null default '29.2',
+	copy_continents_IdContinents int not null,
+	copy_politicalRegime_IdPoliticalRegime int not null,
+	copy_formsOfGovernment_IdFormsOfGovernment int not null,
+	constraint positives check(copy_PopulationStates>0 and copy_SquareStates>0),
+	constraint spacess check(copy_DryLandStates>0 and copy_AquatoriumStates>0 and copy_AerotoriaStates>0),
+	primary key(copy_IdStates)
+);
+INSERT INTO copy_states
+SELECT * FROM states
+WHERE continents_IdContinents=(select IdContinents from continents where NameContinents='Євразія')
+$$;
+
+
+ALTER PROCEDURE public.instate() OWNER TO postgres;
+
+--
+-- TOC entry 233 (class 1255 OID 17420)
+-- Name: instates(character varying, character varying, numeric, character varying, public.economic_type, character varying, numeric, numeric, numeric, numeric, integer, integer, integer); Type: PROCEDURE; Schema: public; Owner: postgres
+--
+
+CREATE PROCEDURE public.instates(n character varying, c character varying, p numeric, nl character varying, e public.economic_type, l character varying, s numeric, d numeric, aq numeric, ae numeric, c_id integer, p_id integer, f_id integer)
+    LANGUAGE sql
+    AS $$
+insert into states(NameStates, CapitalStates, PopulationStates, NationalLanguage, EconomicTypologyOfStates,
+LargestCity, SquareStates, DryLandStates, AquatoriumStates, AerotoriaStates, continents_IdContinents, 
+politicalRegime_IdPoliticalRegime,formsOfGovernment_IdFormsOfGovernment)
+VALUES (n, c, p, nl, e, l, s, d, aq, ae, c_id, p_id, f_id);
+$$;
+
+
+ALTER PROCEDURE public.instates(n character varying, c character varying, p numeric, nl character varying, e public.economic_type, l character varying, s numeric, d numeric, aq numeric, ae numeric, c_id integer, p_id integer, f_id integer) OWNER TO postgres;
+
+--
+-- TOC entry 232 (class 1255 OID 17419)
+-- Name: kol_countries(); Type: PROCEDURE; Schema: public; Owner: postgres
+--
+
+CREATE PROCEDURE public.kol_countries()
+    LANGUAGE sql
+    AS $$
+UPDATE continents
+SET KolStates= (select count(IdStates) from states 
+where continents.IdContinents=states.continents_IdContinents);
+UPDATE continents
+SET KolCountries= (select count(IdCountries) from countries 
+where continents.IdContinents=countries.continents_IdContinents);
+$$;
+
+
+ALTER PROCEDURE public.kol_countries() OWNER TO postgres;
+
+--
+-- TOC entry 231 (class 1255 OID 17375)
+-- Name: square(); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.square() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+begin
+    update states
+    set new.SquareStates=(select distinct SquareContinents from continents 
+where continents.IdContinents=new.continents_IdContinents)-
+((select sum(SquareStates) from states where continents.IdContinents=new.continents_IdContinents)+
+(select sum(SquareCountries) from countries inner join continents on continents.IdContinents=countries.continents_IdContinents)+
+(select sum(SquareTerritory) from territory inner join countries on countries.IdCountries=territory.countries_IdCountries
+inner join continents on continents.IdContinents=countries.continents_IdContinents)+
+(select sum(SquareTerritory) from territory inner join states on states.IdStates=territory.states_IdStates
+inner join continents on continents.IdContinents=states.continents_IdContinents));
+    return new;
+end
+$$;
+
+
+ALTER FUNCTION public.square() OWNER TO postgres;
+
+--
+-- TOC entry 248 (class 1255 OID 17479)
+-- Name: valid_data(); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.valid_data() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+IF NEW.DateStatus > CURRENT_DATE THEN
+RAISE EXCEPTION 'Ви не можете ввести дату, пізнішу сьогоднішньої';
+END IF;
+IF NEW.Comments IS NULL THEN
+NEW.Comments := 'Особливості відсутні';
+END IF;
+RETURN NEW;
+END;
+$$;
+
+
+ALTER FUNCTION public.valid_data() OWNER TO postgres;
+
+SET default_tablespace = '';
+
+SET default_table_access_method = heap;
+
+--
+-- TOC entry 201 (class 1259 OID 17196)
+-- Name: continents; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.continents (
+    idcontinents integer NOT NULL,
+    namecontinents character varying(45) NOT NULL,
+    squarecontinents numeric(12,5) DEFAULT 485.963 NOT NULL,
+    populationcontinents numeric(15,6) DEFAULT 83286.73 NOT NULL,
+    averageheightcontinents numeric(5,2) DEFAULT 693.13 NOT NULL,
+    largestsettlementcontinents character varying(50) NOT NULL,
+    kolstates integer,
+    kolcountries integer,
+    CONSTRAINT positive CHECK (((squarecontinents > (0)::numeric) AND (populationcontinents > (0)::numeric) AND (averageheightcontinents > (0)::numeric)))
+);
+
+
+ALTER TABLE public.continents OWNER TO postgres;
+
+--
+-- TOC entry 211 (class 1259 OID 17263)
+-- Name: countries; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.countries (
+    idcountries integer NOT NULL,
+    namecountries character varying(45) NOT NULL,
+    capitalcountries character varying(45) NOT NULL,
+    populationcountries numeric(6,2) DEFAULT 83286.73 NOT NULL,
+    nationallanguage character varying(30) DEFAULT 'Англійська'::character varying NOT NULL,
+    economictypologyofcountries public.economic_type DEFAULT 'середньорозвинена'::public.economic_type NOT NULL,
+    largestcity character varying(45),
+    squarecountries numeric(9,3) NOT NULL,
+    continents_idcontinents integer NOT NULL,
+    status_idstatus integer NOT NULL,
+    politicalregime_idpoliticalregime integer NOT NULL,
+    formsofgovernment_idformsofgovernment integer NOT NULL,
+    CONSTRAINT positive1 CHECK (((populationcountries > (0)::numeric) AND (squarecountries > (0)::numeric)))
+);
+
+
+ALTER TABLE public.countries OWNER TO postgres;
+
+--
+-- TOC entry 213 (class 1259 OID 17297)
+-- Name: states; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.states (
+    idstates integer NOT NULL,
+    namestates character varying(45) NOT NULL,
+    capitalstates character varying(45) NOT NULL,
+    populationstates numeric(9,3) DEFAULT 83286.73 NOT NULL,
+    nationallanguage character varying(25) DEFAULT 'Англійська'::character varying NOT NULL,
+    economictypologyofstates public.economic_type DEFAULT 'середньорозвинена'::public.economic_type NOT NULL,
+    largestcity character varying(45),
+    squarestates numeric(9,3) DEFAULT 485.963 NOT NULL,
+    drylandstates numeric(5,3) DEFAULT 35.5 NOT NULL,
+    aquatoriumstates numeric(5,3) DEFAULT 35.3 NOT NULL,
+    aerotoriastates numeric(5,3) DEFAULT 29.2 NOT NULL,
+    continents_idcontinents integer NOT NULL,
+    politicalregime_idpoliticalregime integer NOT NULL,
+    formsofgovernment_idformsofgovernment integer NOT NULL,
+    CONSTRAINT positive2 CHECK (((populationstates > (0)::numeric) AND (squarestates > (0)::numeric))),
+    CONSTRAINT spaces CHECK (((drylandstates > (0)::numeric) AND (aquatoriumstates > (0)::numeric) AND (aerotoriastates > (0)::numeric)))
+);
+
+
+ALTER TABLE public.states OWNER TO postgres;
+
+--
+-- TOC entry 224 (class 1259 OID 17501)
+-- Name: comb; Type: VIEW; Schema: public; Owner: postgres
+--
+
+CREATE VIEW public.comb AS
+ SELECT concat(states.namestates, ' (', states.populationstates, ' млн)') AS "Держава",
+    concat(countries.namecountries, ' (', countries.populationcountries, ' млн)') AS "Країна"
+   FROM ((public.states
+     JOIN public.continents ON ((states.continents_idcontinents = continents.idcontinents)))
+     JOIN public.countries ON ((countries.continents_idcontinents = continents.idcontinents)))
+  WHERE ((states.populationstates + countries.populationcountries) > ALL ( SELECT avg((states_1.populationstates + countries_1.populationcountries)) AS avg
+           FROM ((public.states states_1
+             JOIN public.continents continents_1 ON ((states_1.continents_idcontinents = continents_1.idcontinents)))
+             JOIN public.countries countries_1 ON ((countries_1.continents_idcontinents = continents_1.idcontinents)))))
+  GROUP BY CUBE((concat(states.namestates, ' (', states.populationstates, ' млн)')), (concat(countries.namecountries, ' (', countries.populationcountries, ' млн)')));
+
+
+ALTER TABLE public.comb OWNER TO postgres;
+
+--
+-- TOC entry 227 (class 1259 OID 17516)
+-- Name: cont_states; Type: VIEW; Schema: public; Owner: postgres
+--
+
+CREATE VIEW public.cont_states AS
+ SELECT states.namestates AS "Назва",
+    states.capitalstates AS "Столиця",
+    states.populationstates AS "Населення",
+    states.nationallanguage AS "Державна мова",
+    states.economictypologyofstates AS "Економічний тип",
+    states.squarestates AS "Площа"
+   FROM public.states
+  WHERE (states.continents_idcontinents IN ( SELECT continents.idcontinents
+           FROM public.continents
+          WHERE (continents.populationcontinents <= (2000)::numeric)));
+
+
+ALTER TABLE public.cont_states OWNER TO postgres;
+
+--
+-- TOC entry 200 (class 1259 OID 17194)
+-- Name: continents_idcontinents_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+--
+
+CREATE SEQUENCE public.continents_idcontinents_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER TABLE public.continents_idcontinents_seq OWNER TO postgres;
+
+--
+-- TOC entry 3216 (class 0 OID 0)
+-- Dependencies: 200
+-- Name: continents_idcontinents_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+--
+
+ALTER SEQUENCE public.continents_idcontinents_seq OWNED BY public.continents.idcontinents;
+
+
+--
+-- TOC entry 220 (class 1259 OID 17458)
+-- Name: copy_states; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.copy_states (
+    copy_idstates integer NOT NULL,
+    copy_namestates character varying(45) NOT NULL,
+    copy_capitalstates character varying(45) NOT NULL,
+    copy_populationstates numeric(9,3) DEFAULT 83286.73 NOT NULL,
+    copy_nationallanguage character varying(25) DEFAULT 'Англійська'::character varying NOT NULL,
+    copy_economictypologyofstates public.economic_type DEFAULT 'середньорозвинена'::public.economic_type NOT NULL,
+    copy_largestcity character varying(45),
+    copy_squarestates numeric(9,3) DEFAULT 485.963 NOT NULL,
+    copy_drylandstates numeric(5,3) DEFAULT 35.5 NOT NULL,
+    copy_aquatoriumstates numeric(5,3) DEFAULT 35.3 NOT NULL,
+    copy_aerotoriastates numeric(5,3) DEFAULT 29.2 NOT NULL,
+    copy_continents_idcontinents integer NOT NULL,
+    copy_politicalregime_idpoliticalregime integer NOT NULL,
+    copy_formsofgovernment_idformsofgovernment integer NOT NULL,
+    CONSTRAINT positives CHECK (((copy_populationstates > (0)::numeric) AND (copy_squarestates > (0)::numeric))),
+    CONSTRAINT spacess CHECK (((copy_drylandstates > (0)::numeric) AND (copy_aquatoriumstates > (0)::numeric) AND (copy_aerotoriastates > (0)::numeric)))
+);
+
+
+ALTER TABLE public.copy_states OWNER TO postgres;
+
+--
+-- TOC entry 219 (class 1259 OID 17456)
+-- Name: copy_states_copy_idstates_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+--
+
+CREATE SEQUENCE public.copy_states_copy_idstates_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER TABLE public.copy_states_copy_idstates_seq OWNER TO postgres;
+
+--
+-- TOC entry 3218 (class 0 OID 0)
+-- Dependencies: 219
+-- Name: copy_states_copy_idstates_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+--
+
+ALTER SEQUENCE public.copy_states_copy_idstates_seq OWNED BY public.copy_states.copy_idstates;
+
+
+--
+-- TOC entry 210 (class 1259 OID 17261)
+-- Name: countries_idcountries_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+--
+
+CREATE SEQUENCE public.countries_idcountries_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER TABLE public.countries_idcountries_seq OWNER TO postgres;
+
+--
+-- TOC entry 3219 (class 0 OID 0)
+-- Dependencies: 210
+-- Name: countries_idcountries_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+--
+
+ALTER SEQUENCE public.countries_idcountries_seq OWNED BY public.countries.idcountries;
+
+
+--
+-- TOC entry 209 (class 1259 OID 17251)
+-- Name: formsofgovernment; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.formsofgovernment (
+    idformsofgovernment integer NOT NULL,
+    nameformsofgovernment character varying(25) DEFAULT 'республіка'::character varying NOT NULL,
+    typeformsofgovernment character varying(40) NOT NULL,
+    meaningoftheform character varying(70) NOT NULL,
+    comments text
+);
+
+
+ALTER TABLE public.formsofgovernment OWNER TO postgres;
+
+--
+-- TOC entry 228 (class 1259 OID 17521)
+-- Name: forms; Type: VIEW; Schema: public; Owner: postgres
+--
+
+CREATE VIEW public.forms AS
+ SELECT formsofgovernment.nameformsofgovernment AS "Назва форми правління",
+    formsofgovernment.typeformsofgovernment AS "Вид форми",
+    formsofgovernment.meaningoftheform AS "Особливості"
+   FROM public.formsofgovernment
+  WHERE ((formsofgovernment.typeformsofgovernment)::text ~~ 'П%'::text)
+  ORDER BY formsofgovernment.nameformsofgovernment;
+
+
+ALTER TABLE public.forms OWNER TO postgres;
+
+--
+-- TOC entry 208 (class 1259 OID 17249)
+-- Name: formsofgovernment_idformsofgovernment_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+--
+
+CREATE SEQUENCE public.formsofgovernment_idformsofgovernment_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER TABLE public.formsofgovernment_idformsofgovernment_seq OWNER TO postgres;
+
+--
+-- TOC entry 3222 (class 0 OID 0)
+-- Dependencies: 208
+-- Name: formsofgovernment_idformsofgovernment_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+--
+
+ALTER SEQUENCE public.formsofgovernment_idformsofgovernment_seq OWNED BY public.formsofgovernment.idformsofgovernment;
+
+
+--
+-- TOC entry 207 (class 1259 OID 17243)
+-- Name: internationalorganizations; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.internationalorganizations (
+    idinternationalorganizations integer NOT NULL,
+    nameinternationalorganizations character varying(25) NOT NULL,
+    decryption character varying(120) NOT NULL,
+    head character varying(80) NOT NULL,
+    appointment character varying(80) NOT NULL,
+    dateofentry date NOT NULL,
+    releasedate date
+);
+
+
+ALTER TABLE public.internationalorganizations OWNER TO postgres;
+
+--
+-- TOC entry 217 (class 1259 OID 17362)
+-- Name: internationalorganizations_has_states; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.internationalorganizations_has_states (
+    states_idstates integer NOT NULL,
+    internationalorganizations_idinternationalorganizations integer NOT NULL,
+    dateofentry date NOT NULL,
+    releasedate date,
+    reasonforexit character varying(65)
+);
+
+
+ALTER TABLE public.internationalorganizations_has_states OWNER TO postgres;
+
+--
+-- TOC entry 226 (class 1259 OID 17511)
+-- Name: int_org_release; Type: VIEW; Schema: public; Owner: postgres
+--
+
+CREATE VIEW public.int_org_release AS
+ SELECT internationalorganizations.nameinternationalorganizations AS "Міжнародна організація",
+    states.namestates AS "Держава",
+    internationalorganizations_has_states.dateofentry AS "Дата вступу держави"
+   FROM ((public.states
+     JOIN public.internationalorganizations_has_states ON ((states.idstates = internationalorganizations_has_states.states_idstates)))
+     JOIN public.internationalorganizations ON ((internationalorganizations_has_states.internationalorganizations_idinternationalorganizations = internationalorganizations.idinternationalorganizations)))
+  WHERE (internationalorganizations.releasedate IS NOT NULL)
+  ORDER BY internationalorganizations.nameinternationalorganizations;
+
+
+ALTER TABLE public.int_org_release OWNER TO postgres;
+
+--
+-- TOC entry 216 (class 1259 OID 17349)
+-- Name: internationalorganizations_has_countries; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.internationalorganizations_has_countries (
+    countries_idcountries integer NOT NULL,
+    internationalorganizations_idinternationalorganizations integer NOT NULL,
+    dateofentry date NOT NULL,
+    releasedate date,
+    reasonforexit character varying(65)
+);
+
+
+ALTER TABLE public.internationalorganizations_has_countries OWNER TO postgres;
+
+--
+-- TOC entry 206 (class 1259 OID 17241)
+-- Name: internationalorganizations_idinternationalorganizations_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+--
+
+CREATE SEQUENCE public.internationalorganizations_idinternationalorganizations_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER TABLE public.internationalorganizations_idinternationalorganizations_seq OWNER TO postgres;
+
+--
+-- TOC entry 3227 (class 0 OID 0)
+-- Dependencies: 206
+-- Name: internationalorganizations_idinternationalorganizations_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+--
+
+ALTER SEQUENCE public.internationalorganizations_idinternationalorganizations_seq OWNED BY public.internationalorganizations.idinternationalorganizations;
+
+
+--
+-- TOC entry 223 (class 1259 OID 17496)
+-- Name: list_econom_type; Type: VIEW; Schema: public; Owner: postgres
+--
+
+CREATE VIEW public.list_econom_type AS
+ SELECT states.namestates AS "Назва",
+    states.capitalstates AS "Столиця",
+    states.populationstates AS "Населення",
+    states.nationallanguage AS "Державна мова",
+    states.economictypologyofstates AS "Економічний тип",
+    states.squarestates AS "Площа"
+   FROM public.states
+  WHERE (states.economictypologyofstates = ANY (ARRAY['розвинена'::public.economic_type, 'розвивається'::public.economic_type, 'централізоване управління'::public.economic_type]))
+UNION ALL
+ SELECT countries.namecountries AS "Назва",
+    countries.capitalcountries AS "Столиця",
+    countries.populationcountries AS "Населення",
+    countries.nationallanguage AS "Державна мова",
+    countries.economictypologyofcountries AS "Економічний тип",
+    countries.squarecountries AS "Площа"
+   FROM public.countries
+  WHERE (countries.economictypologyofcountries = ANY (ARRAY['розвинена'::public.economic_type, 'розвивається'::public.economic_type, 'централізоване управління'::public.economic_type]))
+  ORDER BY 1;
+
+
+ALTER TABLE public.list_econom_type OWNER TO postgres;
+
+--
+-- TOC entry 230 (class 1259 OID 17529)
+-- Name: list_group_countries; Type: VIEW; Schema: public; Owner: postgres
+--
+
+CREATE VIEW public.list_group_countries AS
+ SELECT internationalorganizations.nameinternationalorganizations AS "Міжнародна організація",
+    string_agg((countries.namecountries)::text, ', '::text) AS "Держави"
+   FROM ((public.internationalorganizations
+     JOIN public.internationalorganizations_has_countries ON ((internationalorganizations_has_countries.internationalorganizations_idinternationalorganizations = internationalorganizations.idinternationalorganizations)))
+     JOIN public.countries ON ((internationalorganizations_has_countries.countries_idcountries = countries.idcountries)))
+  GROUP BY internationalorganizations.nameinternationalorganizations
+  ORDER BY internationalorganizations.nameinternationalorganizations;
+
+
+ALTER TABLE public.list_group_countries OWNER TO postgres;
+
+--
+-- TOC entry 205 (class 1259 OID 17235)
+-- Name: politicalregime; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.politicalregime (
+    idpoliticalregime integer NOT NULL,
+    namepoliticalregime character varying(45) NOT NULL,
+    typepoliticalregime character varying(40) NOT NULL,
+    mainopportunity character varying(65) NOT NULL
+);
+
+
+ALTER TABLE public.politicalregime OWNER TO postgres;
+
+--
+-- TOC entry 225 (class 1259 OID 17506)
+-- Name: list_states; Type: VIEW; Schema: public; Owner: postgres
+--
+
+CREATE VIEW public.list_states AS
+ SELECT states.namestates AS "Назва держави",
+    politicalregime.namepoliticalregime AS "Політичний режим",
+    formsofgovernment.nameformsofgovernment AS "Форма правління",
+    count(internationalorganizations_has_states.internationalorganizations_idinternationalorganizations) AS "Кількість організацій"
+   FROM (((public.states
+     JOIN public.politicalregime ON ((states.politicalregime_idpoliticalregime = politicalregime.idpoliticalregime)))
+     JOIN public.formsofgovernment ON ((states.formsofgovernment_idformsofgovernment = formsofgovernment.idformsofgovernment)))
+     JOIN public.internationalorganizations_has_states ON ((states.idstates = internationalorganizations_has_states.states_idstates)))
+  GROUP BY states.namestates, politicalregime.namepoliticalregime, formsofgovernment.nameformsofgovernment
+  ORDER BY states.namestates;
+
+
+ALTER TABLE public.list_states OWNER TO postgres;
+
+--
+-- TOC entry 204 (class 1259 OID 17233)
+-- Name: politicalregime_idpoliticalregime_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+--
+
+CREATE SEQUENCE public.politicalregime_idpoliticalregime_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER TABLE public.politicalregime_idpoliticalregime_seq OWNER TO postgres;
+
+--
+-- TOC entry 3232 (class 0 OID 0)
+-- Dependencies: 204
+-- Name: politicalregime_idpoliticalregime_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+--
+
+ALTER SEQUENCE public.politicalregime_idpoliticalregime_seq OWNED BY public.politicalregime.idpoliticalregime;
+
+
+--
+-- TOC entry 218 (class 1259 OID 17411)
+-- Name: regimes; Type: VIEW; Schema: public; Owner: postgres
+--
+
+CREATE VIEW public.regimes AS
+ SELECT continents.namecontinents AS cont,
+    politicalregime.namepoliticalregime AS polreg,
+    count(politicalregime.idpoliticalregime) AS numbofreg
+   FROM ((public.continents
+     LEFT JOIN public.states ON ((continents.idcontinents = states.continents_idcontinents)))
+     LEFT JOIN public.politicalregime ON ((states.politicalregime_idpoliticalregime = politicalregime.idpoliticalregime)))
+  GROUP BY continents.namecontinents, politicalregime.namepoliticalregime
+  ORDER BY continents.namecontinents, (count(politicalregime.idpoliticalregime)) DESC;
+
+
+ALTER TABLE public.regimes OWNER TO postgres;
+
+--
+-- TOC entry 222 (class 1259 OID 17488)
+-- Name: rezerv; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.rezerv (
+    id_rez integer NOT NULL,
+    rez_date_event timestamp without time zone,
+    rez_event character varying(10) NOT NULL,
+    rez_tm_event character varying(10) NOT NULL,
+    rez_c_namecountries character varying(45) NOT NULL,
+    rez_c_capital character varying(45) NOT NULL,
+    rez_c_language character varying(30) NOT NULL,
+    rez_c_square numeric(9,3) NOT NULL
+);
+
+
+ALTER TABLE public.rezerv OWNER TO postgres;
+
+--
+-- TOC entry 221 (class 1259 OID 17486)
+-- Name: rezerv_id_rez_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+--
+
+CREATE SEQUENCE public.rezerv_id_rez_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER TABLE public.rezerv_id_rez_seq OWNER TO postgres;
+
+--
+-- TOC entry 3235 (class 0 OID 0)
+-- Dependencies: 221
+-- Name: rezerv_id_rez_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+--
+
+ALTER SEQUENCE public.rezerv_id_rez_seq OWNED BY public.rezerv.id_rez;
+
+
+--
+-- TOC entry 212 (class 1259 OID 17295)
+-- Name: states_idstates_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+--
+
+CREATE SEQUENCE public.states_idstates_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER TABLE public.states_idstates_seq OWNER TO postgres;
+
+--
+-- TOC entry 3236 (class 0 OID 0)
+-- Dependencies: 212
+-- Name: states_idstates_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+--
+
+ALTER SEQUENCE public.states_idstates_seq OWNED BY public.states.idstates;
+
+
+--
+-- TOC entry 229 (class 1259 OID 17525)
+-- Name: states_int_org_80; Type: VIEW; Schema: public; Owner: postgres
+--
+
+CREATE VIEW public.states_int_org_80 AS
+ SELECT internationalorganizations_has_states.states_idstates AS "Код держави",
+    internationalorganizations_has_states.internationalorganizations_idinternationalorganizations AS "Код організації",
+    internationalorganizations_has_states.dateofentry AS "Дата входу",
+    internationalorganizations_has_states.releasedate AS "Дата виходу"
+   FROM public.internationalorganizations_has_states
+  WHERE (internationalorganizations_has_states.dateofentry <= '1980-09-12'::date);
+
+
+ALTER TABLE public.states_int_org_80 OWNER TO postgres;
+
+--
+-- TOC entry 203 (class 1259 OID 17210)
+-- Name: status; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.status (
+    idstatus integer NOT NULL,
+    namestatus character varying(45) NOT NULL,
+    datestatus date NOT NULL,
+    mainopportunity text NOT NULL,
+    comments text
+);
+
+
+ALTER TABLE public.status OWNER TO postgres;
+
+--
+-- TOC entry 202 (class 1259 OID 17208)
+-- Name: status_idstatus_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+--
+
+CREATE SEQUENCE public.status_idstatus_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER TABLE public.status_idstatus_seq OWNER TO postgres;
+
+--
+-- TOC entry 3239 (class 0 OID 0)
+-- Dependencies: 202
+-- Name: status_idstatus_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+--
+
+ALTER SEQUENCE public.status_idstatus_seq OWNED BY public.status.idstatus;
+
+
+--
+-- TOC entry 215 (class 1259 OID 17331)
+-- Name: territory; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.territory (
+    idterritory integer NOT NULL,
+    nameterritory character varying(45) NOT NULL,
+    squareterritory numeric(9,3) DEFAULT 485.963,
+    typeterritory character varying(25) NOT NULL,
+    lengthterritory numeric(5,3) NOT NULL,
+    countries_idcountries integer NOT NULL,
+    states_idstates integer NOT NULL,
+    CONSTRAINT positive3 CHECK (((squareterritory > (0)::numeric) AND (lengthterritory > (0)::numeric)))
+);
+
+
+ALTER TABLE public.territory OWNER TO postgres;
+
+--
+-- TOC entry 214 (class 1259 OID 17329)
+-- Name: territory_idterritory_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+--
+
+CREATE SEQUENCE public.territory_idterritory_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER TABLE public.territory_idterritory_seq OWNER TO postgres;
+
+--
+-- TOC entry 3241 (class 0 OID 0)
+-- Dependencies: 214
+-- Name: territory_idterritory_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+--
+
+ALTER SEQUENCE public.territory_idterritory_seq OWNED BY public.territory.idterritory;
+
+
+--
+-- TOC entry 2960 (class 2604 OID 17199)
+-- Name: continents idcontinents; Type: DEFAULT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.continents ALTER COLUMN idcontinents SET DEFAULT nextval('public.continents_idcontinents_seq'::regclass);
+
+
+--
+-- TOC entry 2988 (class 2604 OID 17461)
+-- Name: copy_states copy_idstates; Type: DEFAULT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.copy_states ALTER COLUMN copy_idstates SET DEFAULT nextval('public.copy_states_copy_idstates_seq'::regclass);
+
+
+--
+-- TOC entry 2970 (class 2604 OID 17266)
+-- Name: countries idcountries; Type: DEFAULT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.countries ALTER COLUMN idcountries SET DEFAULT nextval('public.countries_idcountries_seq'::regclass);
+
+
+--
+-- TOC entry 2968 (class 2604 OID 17254)
+-- Name: formsofgovernment idformsofgovernment; Type: DEFAULT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.formsofgovernment ALTER COLUMN idformsofgovernment SET DEFAULT nextval('public.formsofgovernment_idformsofgovernment_seq'::regclass);
+
+
+--
+-- TOC entry 2967 (class 2604 OID 17246)
+-- Name: internationalorganizations idinternationalorganizations; Type: DEFAULT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.internationalorganizations ALTER COLUMN idinternationalorganizations SET DEFAULT nextval('public.internationalorganizations_idinternationalorganizations_seq'::regclass);
+
+
+--
+-- TOC entry 2966 (class 2604 OID 17238)
+-- Name: politicalregime idpoliticalregime; Type: DEFAULT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.politicalregime ALTER COLUMN idpoliticalregime SET DEFAULT nextval('public.politicalregime_idpoliticalregime_seq'::regclass);
+
+
+--
+-- TOC entry 2998 (class 2604 OID 17491)
+-- Name: rezerv id_rez; Type: DEFAULT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.rezerv ALTER COLUMN id_rez SET DEFAULT nextval('public.rezerv_id_rez_seq'::regclass);
+
+
+--
+-- TOC entry 2975 (class 2604 OID 17300)
+-- Name: states idstates; Type: DEFAULT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.states ALTER COLUMN idstates SET DEFAULT nextval('public.states_idstates_seq'::regclass);
+
+
+--
+-- TOC entry 2965 (class 2604 OID 17213)
+-- Name: status idstatus; Type: DEFAULT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.status ALTER COLUMN idstatus SET DEFAULT nextval('public.status_idstatus_seq'::regclass);
+
+
+--
+-- TOC entry 2985 (class 2604 OID 17334)
+-- Name: territory idterritory; Type: DEFAULT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.territory ALTER COLUMN idterritory SET DEFAULT nextval('public.territory_idterritory_seq'::regclass);
+
+
+--
+-- TOC entry 3185 (class 0 OID 17196)
+-- Dependencies: 201
+-- Data for Name: continents; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.continents (idcontinents, namecontinents, squarecontinents, populationcontinents, averageheightcontinents, largestsettlementcontinents, kolstates, kolcountries) FROM stdin;
+5	Австралія	58932.43000	32094.000000	293.90	Сідней	2	1
+6	Антарктида	39432.92000	1000.730000	240.38	Вілла-лас-Естреллас	2	1
+1	Євразія	93892.92000	8734.900000	754.90	Шанхай	24	6
+2	Африка	74932.53000	9211.780000	478.30	Лагос	12	2
+4	Південна Америка	58244.23000	3800.730000	672.30	Сан-Паулу	2	3
+3	Північна Америка	93724.35300	5280.780000	378.20	Мехіко	8	1
+\.
+
+
+--
+-- TOC entry 3203 (class 0 OID 17458)
+-- Dependencies: 220
+-- Data for Name: copy_states; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.copy_states (copy_idstates, copy_namestates, copy_capitalstates, copy_populationstates, copy_nationallanguage, copy_economictypologyofstates, copy_largestcity, copy_squarestates, copy_drylandstates, copy_aquatoriumstates, copy_aerotoriastates, copy_continents_idcontinents, copy_politicalregime_idpoliticalregime, copy_formsofgovernment_idformsofgovernment) FROM stdin;
+1	Албанія	Тирана	28227.340	албанська	розвинена	Дуррес	28748.930	52.300	4.700	43.000	1	2	1
+4	Ізраїль	Єрусалим	921000.320	арабська	розвивається	Єрусалим	20770.340	71.400	13.800	14.800	1	6	1
+5	Нідерланди	Амстердам	173790.440	нідерландська	централізоване управління	Ротердам	41526.700	35.700	12.400	51.900	1	9	6
+6	Сербія	Белград	696400.330	сербська	розвивається	Белград	88361.520	48.300	17.800	33.900	1	4	1
+7	Хорватія	Загреб	429100.870	хорватська	централізоване управління	Дубровник	56594.230	38.800	17.300	43.900	1	8	1
+8	Україна	Київ	417300.430	українська	розвивається	Київ	603548.320	69.300	21.500	9.200	1	4	1
+11	Афганістан	Кабул	341411.420	пушту	централізоване управління	Кабул	652230.430	37.900	22.500	39.600	1	11	2
+12	Бангладеш	Дакка	165775.320	бенгальська	перехідна	Дакка	14770.320	38.900	25.300	35.800	1	14	1
+13	Болгарія	Софія	700034.320	болгарська	середньорозвинена	Софія	110993.430	59.300	17.400	23.300	1	5	1
+14	Естонія	Таллінн	134194.000	естонська	середньорозвинена	Таллінн	45226.434	49.200	14.700	36.100	1	18	1
+16	Німеччина	Берлін	83019.200	німецька	розвивається	Берлін	357578.320	49.220	39.100	11.680	1	1	1
+17	ОАЕ	Абудабі	999203.940	арабська	централізоване управління	Дубай	83.600	49.600	21.400	29.000	1	15	5
+21	Данія	Копенгаген	5432.330	данська	середньорозвинена	Копенгаген	43094.680	39.600	21.400	39.000	1	15	6
+27	Іспанія	Мадрид	462980.590	іспанська	розвинена	Мадрид	50445.320	83.200	6.400	10.400	1	8	6
+28	Італія	Рим	605886.320	італійська	розвинена	Рим	301338.320	39.300	12.500	48.200	1	17	1
+30	Катар	Доха	190347.540	арабська	перехідна	Доха	11437.890	83.500	8.200	8.300	1	14	6
+40	Румунія	Бухарест	212641.320	румунська	середньорозвинена	Бухарест	238397.420	52.400	9.400	38.200	1	4	3
+42	Сан-Марино	Сан-Марино	32284.600	італійська	перехідна	Догана	61.430	36.500	17.400	46.100	1	8	4
+46	Туркменістан	Ашгабат	592000.320	туркменська	централізоване управління	Туркменбаші	488100.338	63.900	28.400	7.700	1	12	2
+47	Узбекистан	Ташкент	311500.340	узбецька	перехідна	Самаркант	447400.923	39.100	15.800	45.100	1	17	2
+48	Угорщина	Будапешт	97761.840	угорська	розвивається	Будапешт	93030.430	39.500	13.800	46.700	1	5	1
+49	Фінляндія	Гельсінкі	54729.930	фінська	середньорозвинена	Турку	338145.240	29.300	10.000	60.700	1	5	1
+50	Чехія	Прага	106540.460	чеська	розвинена	Прага	78866.290	48.300	27.320	24.380	1	1	4
+58	Білорусь	Мінськ	9475.300	білоруська	розвивається	Мінськ	207604.000	34.200	27.400	38.400	1	7	2
+\.
+
+
+--
+-- TOC entry 3195 (class 0 OID 17263)
+-- Dependencies: 211
+-- Data for Name: countries; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.countries (idcountries, namecountries, capitalcountries, populationcountries, nationallanguage, economictypologyofcountries, largestcity, squarecountries, continents_idcontinents, status_idstatus, politicalregime_idpoliticalregime, formsofgovernment_idformsofgovernment) FROM stdin;
+3	Косово	Приштина	197.90	албанська	розвивається	Приштина	1098.430	1	3	5	1
+4	Республіка Абхазія	Сухумі	205.80	абхазька	централізоване управління	Сухумі	860.430	1	5	14	2
+5	Придністровя	Тирасполь	475.87	молдовська	перехідна	Тирасполь	4163.980	1	4	17	2
+6	Північний Кіпр	Лефкоша	286.87	турецька	розвивається	Нікосія	355.870	1	4	1	2
+7	Південна Осетія	Цхінвалі	700.23	осетинська	перехідна	Цхінвалі	3900.840	1	12	4	2
+8	Сомаліленд	Харгейса	350.93	сомалі	перехідна	Харгейса	13760.000	2	4	14	2
+9	Пуерто-Рико	Сан-Хуан	395.74	іспанська	розвивається	Сан-Хуан	9104.830	4	6	18	5
+10	Аруба	Ораньєстад	1035.93	нідерландська	перехідна	Ораньєстад	193.700	4	9	15	6
+11	Кюрасао	Віллемстад	1416.73	голландська	середньорозвинена	Віллемстад	444.930	4	9	12	6
+12	Сінт-Мартен	Філіпсбург	4917.37	нідерландська	розвивається	Філіпсбург	34.860	1	9	8	6
+22	Острів Макдональд	Австралія	2.00	англійська	розвивається	Вікторія	220.830	6	3	2	1
+24	Канада	Оттава	9093.32	англійська	розвивається	Оттава	16545.830	3	5	2	2
+\.
+
+
+--
+-- TOC entry 3193 (class 0 OID 17251)
+-- Dependencies: 209
+-- Data for Name: formsofgovernment; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.formsofgovernment (idformsofgovernment, nameformsofgovernment, typeformsofgovernment, meaningoftheform, comments) FROM stdin;
+1	Республіка	Парламентська	Уряд формує парламент	Уряд обирає президента
+2	Республіка	Президентська	Значна роль президента	Президент виступає як глава держави і уряду
+3	Республіка	Президентсько-парламентська	Президент консолідує широкі можливості	Президент пропонує склад уряду
+4	Республіка	Парламентсько-президентська	Влада президента обмежена парламентом	Перевага парламенту у формуванні уряду
+5	Монархія	Необмежена(абсолютна)	Влада повністю в руках монарха	Правління близьке до диктатури
+6	Монархія	Обмежена(конституційна)	Монарх не володіє верховними повноваженнями	Правові обмеження закріплені у вищих законах
+\.
+
+
+--
+-- TOC entry 3191 (class 0 OID 17243)
+-- Dependencies: 207
+-- Data for Name: internationalorganizations; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.internationalorganizations (idinternationalorganizations, nameinternationalorganizations, decryption, head, appointment, dateofentry, releasedate) FROM stdin;
+1	ООН	Організація Обєднаних Націй	Антоніу Гутерреш	Підтримання та зміцнення миру	1945-10-24	\N
+2	ЛАД	Ліга Арабських Держав	Амур Муса	Координація взаємодії між державами	1945-03-22	\N
+3	ОАД	Організація Американських Держав	Хосе Мігель Інсульса	Виконання комерційних функцій	1948-05-05	\N
+4	ОАЄ	Організація Африканської Єдності	Муаммар Каддафі	Подолання колоніалізму на континенті	1963-05-25	2002-07-11
+5	АЗПАК	Азіатсько-Тихоокеанська Рада	Сесія міністрів іноземних справ	Збереження цілісності перед загрозами	1966-06-16	\N
+6	НАТО	Організація Північноатлантичного договору	Єнс Столтенберг	Колективна безпека	1949-04-04	\N
+7	ЗЄС	Західноєвропейський союз	Рада міністрів	Оперативні повноваження у сфері оборони	1954-09-12	2011-06-30
+8	АНЗЮС	Тихоокеанський пакт безпеки	Союз трьох держав	Колективна безпека	1951-09-01	\N
+9	СОТ	Світова організація торгівлі	Роберто Азеведо	Для лібералізації міжнародної торгівлі	1995-01-01	\N
+10	ОПЕК	Організація країн-експортерів нафти	Дізані Елісон-Мадуеке	Для стабілізації цін на нафту	1960-09-14	\N
+11	ОЧЕС	Організація чорноморського економічного співробітництва	Тургут Озал	Тісне економічне співробітництво	1992-06-04	\N
+12	НАФТА	Північноамериканська зона вільної торгівлі	Обєднання країн	Формування найбільшого ринку	1994-01-24	2018-11-30
+13	ЄС	Європейський Союз	Урсула фон дер Ляєн	Економічний та політичний союз	1993-11-01	\N
+14	СНД	Співдружність Незалежних Держав	Сергій Лебедєв	Співпраця в різноманітних галузях	1991-12-08	\N
+15	ГУАМ	Організація за демократія та економічний розвиток	Алтай Ефендієв	Єдність позицій країн	2006-05-26	\N
+16	ЦЄІ	Центральноєвропейська ініціатива	Угрупування країн Європи	Налагодження багатобічного співробітництва	1989-11-21	\N
+17	МБРР	Міжнародний банк реконструкції та розвитку	Девід Малпасс	Сприяння розвитку економіки	1944-09-11	\N
+18	МВФ	Міжнародний Валютний Фонд	Крісталіна Георгієва	Регулювання валютно-кредитних відносин	1945-12-27	\N
+19	ВООЗ	Всесвітня організація охорони здоровя	Тедрос Аданом Гебреісус	Вирішення проблем охорони здоровя	1948-04-07	\N
+20	ЄБРР	Європейський банк реконструкції та розвитку	Жак Атталі	Допомога країнам для проведення ринкових реформ	1991-05-23	\N
+21	МАГАТЕ	Міжнародна агенція з атомної енергії	Амано	Контроль за мирним використанням атомної енергії	1957-07-29	\N
+22	МОП	Міжнародна організація праці	Гай Райдер	Підтримка міжнародного співробітництва	1919-05-21	\N
+23	ОБСЄ	Організація з безпеки і співробітницива в Європі	Анджеліно Альфано	Регулювання кризвих ситуацій	1995-01-01	\N
+24	НБСЄ	Нарада з безпеки і співробітницива в Європі	Івіца Дачич	Запобігання конфліктних ситуацій	1973-07-03	1975-08-01
+25	РЄ	Рада Європи	Марія Пейчинович-Бурич	Вирішення питань попередження злочинності	1946-09-19	\N
+26	ЮНЕСКО	ООН з питань освіти, науки і культури	Одрі Азулай	Ліквідація неписьменності, охорона памяток	1946-11-04	\N
+27	СОІВ	Світова організація інтелектуальної власності	Френсіс Гаррі	Захист інтелектуальної власності світу	1967-07-14	\N
+28	EURACOAL	Європейська асоація вугілля та лігніту	Обєднання країн	Проголошення ролі вугілля	2011-09-06	\N
+\.
+
+
+--
+-- TOC entry 3200 (class 0 OID 17349)
+-- Dependencies: 216
+-- Data for Name: internationalorganizations_has_countries; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.internationalorganizations_has_countries (countries_idcountries, internationalorganizations_idinternationalorganizations, dateofentry, releasedate, reasonforexit) FROM stdin;
+3	1	1999-09-10	\N	
+3	6	2008-02-17	\N	
+3	13	2016-07-24	\N	
+4	1	2008-09-05	\N	
+6	1	2008-01-01	\N	
+6	13	2004-05-01	\N	
+8	1	2002-09-09	\N	
+9	1	2016-10-09	\N	
+9	19	2017-11-23	\N	
+11	1	2007-12-09	\N	
+11	20	2009-11-27	\N	
+\.
+
+
+--
+-- TOC entry 3201 (class 0 OID 17362)
+-- Dependencies: 217
+-- Data for Name: internationalorganizations_has_states; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.internationalorganizations_has_states (states_idstates, internationalorganizations_idinternationalorganizations, dateofentry, releasedate, reasonforexit) FROM stdin;
+1	1	1955-12-15	\N	
+1	25	1995-07-03	\N	
+1	16	2012-11-24	\N	
+1	6	2009-04-01	\N	
+1	26	1989-07-10	\N	
+2	1	1945-10-24	\N	
+2	19	1997-09-20	\N	
+3	1	1999-09-14	\N	
+4	1	1949-05-11	\N	
+4	2	1989-11-03	\N	
+4	6	1999-09-11	\N	
+5	1	1973-11-09	1999-11-12	Вихід на новий рівень
+5	5	1998-12-29	\N	
+5	6	1987-12-29	\N	
+6	9	1972-10-09	\N	
+7	1	2001-07-26	\N	
+8	1	1992-09-19	\N	
+8	16	2008-10-10	2020-12-12	Перехід в іншу організацію
+9	20	1991-09-25	\N	
+9	1	2002-02-02	\N	
+9	21	1987-09-12	\N	
+9	17	1999-12-29	\N	
+9	10	2002-03-25	\N	
+21	13	1994-04-05	\N	
+25	25	1992-09-29	\N	
+29	27	1999-11-19	2011-11-23	Зміна статусу
+33	12	2008-12-12	\N	
+38	1	1995-09-18	\N	
+44	14	2002-04-18	\N	
+45	21	1993-11-16	\N	
+45	16	2003-10-09	\N	
+48	5	2009-09-20	\N	
+48	8	2001-10-28	\N	
+46	19	2005-09-19	\N	
+46	21	1999-09-29	\N	
+46	11	2009-11-19	\N	
+38	11	2010-11-27	\N	
+33	10	1992-05-24	\N	
+13	9	1988-12-03	2006-09-01	Зміна статусу
+44	7	1998-09-06	\N	
+47	3	2009-09-10	\N	
+49	1	2001-02-01	\N	
+49	23	1992-10-16	2008-04-03	Вхід в іншу організацію
+50	12	2002-11-29	\N	
+3	19	1998-09-21	\N	
+\.
+
+
+--
+-- TOC entry 3189 (class 0 OID 17235)
+-- Dependencies: 205
+-- Data for Name: politicalregime; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.politicalregime (idpoliticalregime, namepoliticalregime, typepoliticalregime, mainopportunity) FROM stdin;
+1	Демократичний режим	пряма форма	вибори, референдуми, громадські ініціативи, обговорення
+2	Демократичний режим	представницька форма	органи первинного народного представництва
+3	Авторитарний режим	військово-бюрократичний	військова диктатура, деякі цивільні фахівці
+4	Авторитарний режим	корпоративний	альтернатива ідеологізованій масовій партії
+5	Авторитарний режим	дототалітарний	партисипаторний і демократичний режим
+6	Авторитарний режим	постколоніальний	однопартійні мобілізаційні режими
+7	Авторитарний режим	расова квазідемократія	режим ПАР з ідеологією апартеїду
+8	Авторитарний режим	султаністський режим	гранична форма автократії
+9	Тоталітарний режим	пряма форма	повний контроль з боку держави
+10	Гібридний режим	представницька форма	значні порушення, корупція
+11	Анархія	представницька форма	безвладдя, повна відсутність режиму
+12	Аристократія	форма державного ладу	правління представниками родової знаті
+13	Військова диктатура	пряма форма	владу формують представники Збройних Сил
+14	Демократура	демократія+диктатура	можливість безкарного ігнорування
+15	Деспотизм	представницька форма	вся правота влади належить монарху, тирану або диктатору
+16	Диктатура	необмежена влада	застосування апарату насильства
+17	Епістократія	пряма форма	політична влада надається освіченим громадянам
+18	Корпоратократія	форма правління	влада належить могутнім і багатим компаніям
+19	Олігархія	олігархат	правління належить можновладцям
+20	Охлократія	вироджена форма демократії	мінливі примхи натовпу
+21	Плутократія	пряма форма	влада належить найбагатшим представникам
+22	Тиранія	представницька форма	одноосібна влада з підтримкою армії
+23	Фашизм	радикальна імперіалістична	ідея єднання та мобілізації нації та держави проти ворогів
+\.
+
+
+--
+-- TOC entry 3205 (class 0 OID 17488)
+-- Dependencies: 222
+-- Data for Name: rezerv; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.rezerv (id_rez, rez_date_event, rez_event, rez_tm_event, rez_c_namecountries, rez_c_capital, rez_c_language, rez_c_square) FROM stdin;
+2	2021-02-04 00:00:00	DELETE	BEFORE	Західна Сахара	Ель-Аюн	арабська	26600.000
+3	2021-02-04 00:00:00	DELETE	BEFORE	Тасманія	Канберра	англійська	2020.830
+\.
+
+
+--
+-- TOC entry 3197 (class 0 OID 17297)
+-- Dependencies: 213
+-- Data for Name: states; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.states (idstates, namestates, capitalstates, populationstates, nationallanguage, economictypologyofstates, largestcity, squarestates, drylandstates, aquatoriumstates, aerotoriastates, continents_idcontinents, politicalregime_idpoliticalregime, formsofgovernment_idformsofgovernment) FROM stdin;
+1	Албанія	Тирана	28227.340	албанська	розвинена	Дуррес	28748.930	52.300	4.700	43.000	1	2	1
+2	Єгипет	Каїр	107040.240	арабська	розвинена	Каїр	100450.430	69.100	6.300	24.600	2	7	3
+3	Кірибаті	Південна Тарава	105432.600	кірибаті	перехідна	Бетіо	726.800	29.700	29.100	41.200	6	18	3
+4	Ізраїль	Єрусалим	921000.320	арабська	розвивається	Єрусалим	20770.340	71.400	13.800	14.800	1	6	1
+5	Нідерланди	Амстердам	173790.440	нідерландська	централізоване управління	Ротердам	41526.700	35.700	12.400	51.900	1	9	6
+6	Сербія	Белград	696400.330	сербська	розвивається	Белград	88361.520	48.300	17.800	33.900	1	4	1
+7	Хорватія	Загреб	429100.870	хорватська	централізоване управління	Дубровник	56594.230	38.800	17.300	43.900	1	8	1
+8	Україна	Київ	417300.430	українська	розвивається	Київ	603548.320	69.300	21.500	9.200	1	4	1
+9	Тувалу	Фунафуті	10544.330	англійська	розвивається	Фунафуті	26.430	35.700	29.600	34.700	6	15	6
+10	Аргентина	Буенос-Айрес	401096.430	іспанська	середньорозвинена	Буенос-Айрес	276890.300	58.200	26.500	15.300	3	1	2
+11	Афганістан	Кабул	341411.420	пушту	централізоване управління	Кабул	652230.430	37.900	22.500	39.600	1	11	2
+12	Бангладеш	Дакка	165775.320	бенгальська	перехідна	Дакка	14770.320	38.900	25.300	35.800	1	14	1
+13	Болгарія	Софія	700034.320	болгарська	середньорозвинена	Софія	110993.430	59.300	17.400	23.300	1	5	1
+14	Естонія	Таллінн	134194.000	естонська	середньорозвинена	Таллінн	45226.434	49.200	14.700	36.100	1	18	1
+15	Ліберія	Монровія	412572.430	англійська	централізоване управління	Монровія	11369.320	42.700	18.900	38.400	2	17	2
+16	Німеччина	Берлін	83019.200	німецька	розвивається	Берлін	357578.320	49.220	39.100	11.680	1	1	1
+17	ОАЕ	Абудабі	999203.940	арабська	централізоване управління	Дубай	83.600	49.600	21.400	29.000	1	15	5
+18	Парагвай	Асунсьйон	631306.730	іспанська	середньорозвинена	Асунсьйон	406752.430	49.200	16.400	34.400	3	4	1
+19	Республіка Конго	Браззавіль	423063.320	французька	централізоване управління	Браззавіль	342032.210	38.900	14.800	46.300	2	11	2
+20	Сальвадор	Сан-Сальвадор	614350.320	іспанська	перехідна	Сан-Сальвадор	21040.940	49.200	15.300	35.500	4	6	1
+21	Данія	Копенгаген	5432.330	данська	середньорозвинена	Копенгаген	43094.680	39.600	21.400	39.000	1	15	6
+22	Гаїті	Порт-о-Пренс	971932.320	французька	централізоване управління	Порт-о-Пренс	27750.320	48.200	18.300	33.500	3	6	2
+23	Домініка	Розо	71727.360	англійська	середньорозвинена	Розо	751.340	54.200	21.400	24.400	3	2	1
+24	Еквадор	Кіто	163068.430	іспанська	розвивається	Гуаякіль	25630.920	42.500	15.500	42.000	4	1	2
+25	Еритрея	Асмара	60895.320	арабська	розвивається	Асмара	117600.320	38.200	28.400	33.400	2	7	2
+26	Зімбабве	Хараре	16150.480	англійська	централізоване управління	Хараре	39057.420	59.200	23.500	17.300	2	20	2
+27	Іспанія	Мадрид	462980.590	іспанська	розвинена	Мадрид	50445.320	83.200	6.400	10.400	1	8	6
+28	Італія	Рим	605886.320	італійська	розвинена	Рим	301338.320	39.300	12.500	48.200	1	17	1
+29	Канада	Оттава	370011.980	англійська	розвивається	Торонто	99870.320	49.300	21.400	29.300	3	17	6
+30	Катар	Доха	190347.540	арабська	перехідна	Доха	11437.890	83.500	8.200	8.300	1	14	6
+31	Куба	Гавана	112904.820	іспанська	середньорозвинена	Гавана	110861.230	49.220	23.800	26.980	3	2	1
+33	Малаві	Лілонгве	180100.450	англійська	середньорозвинена	Лілонгве	118.484	67.200	26.100	6.700	2	2	1
+34	Малайзія	Куала-Лумпур	274000.320	малайська	централізоване управління	Куала-Лумпур	32947.890	58.200	23.700	18.100	5	15	6
+35	Непал	Катманду	289852.530	непальська	централізоване управління	Катманду	14711.320	59.200	19.700	21.100	2	6	1
+36	Нігер	Ніамей	139500.430	французька	перехідна	Ніамей	126700.000	54.800	31.400	13.800	2	2	2
+38	Панама	Панама	332000.330	іспанська	розвивається	Панама	75570.430	63.700	32.900	3.400	3	7	4
+39	ПАР	Кейптаун	58657.720	англійська	перехідна	Йоганнесбург	12237.430	79.200	12.400	8.400	2	2	1
+40	Румунія	Бухарест	212641.320	румунська	середньорозвинена	Бухарест	238397.420	52.400	9.400	38.200	1	4	3
+41	Руанда	Кігалі	112564.000	англійська	централізоване управління	Кігалі	26798.000	68.300	14.700	17.000	2	10	3
+42	Сан-Марино	Сан-Марино	32284.600	італійська	перехідна	Догана	61.430	36.500	17.400	46.100	1	8	4
+43	Сенегал	Дакар	136338.230	французька	централізоване управління	Дакар	19623.420	48.200	29.400	22.400	2	2	2
+44	США	Вашингтон	328900.330	мови США	розвинена	Нью-Йорк	982675.380	63.800	15.300	20.900	3	14	2
+45	Туніс	Туніс	114800.420	арабська	перехідна	Туніс	163610.320	73.200	8.500	18.300	2	6	2
+46	Туркменістан	Ашгабат	592000.320	туркменська	централізоване управління	Туркменбаші	488100.338	63.900	28.400	7.700	1	12	2
+47	Узбекистан	Ташкент	311500.340	узбецька	перехідна	Самаркант	447400.923	39.100	15.800	45.100	1	17	2
+48	Угорщина	Будапешт	97761.840	угорська	розвивається	Будапешт	93030.430	39.500	13.800	46.700	1	5	1
+49	Фінляндія	Гельсінкі	54729.930	фінська	середньорозвинена	Турку	338145.240	29.300	10.000	60.700	1	5	1
+50	Чехія	Прага	106540.460	чеська	розвинена	Прага	78866.290	48.300	27.320	24.380	1	1	4
+54	Квінсленд	Канберра	2827.340	англійська	розвивається	Дуррес	3093.300	52.300	4.700	43.000	5	2	1
+58	Білорусь	Мінськ	9475.300	білоруська	розвивається	Мінськ	207604.000	34.200	27.400	38.400	1	7	2
+\.
+
+
+--
+-- TOC entry 3187 (class 0 OID 17210)
+-- Dependencies: 203
+-- Data for Name: status; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.status (idstatus, namestatus, datestatus, mainopportunity, comments) FROM stdin;
+3	визнана більшістю	2008-02-17	не входить до ООН	\N
+4	не визнана	1971-06-23	визнана де-факто	більшістю не визнана де-юре
+5	державне утворення	2011-10-11	формально незалежна	майже ніким не визнана
+6	вільно приєднана до США	2018-07-23	повне приєднання	\N
+7	коронна земля	1973-11-07	територія Великої Британії	містить найстарший парламент у світі
+8	заморська територія	2010-10-21	територія Великої Британії	самоврядна територія
+9	спірна територія	1967-09-10	керована Сполученим королівством	територіальні претензії Іспанії
+10	заморська територія Нідерландів	1986-01-01	на шляху до незалежності	\N
+11	автономний регіон	1976-11-17	регіон Португалії в Африці	\N
+12	особливий статус	1920-09-11	обумовлений в міжнародних угодах	під правлінням Норвегії
+13	невизначений статус	1994-08-21	в процесі досягнення повної незалежності	\N
+14	з претензіями в майбутньому	2011-10-30	самоврядні території	\N
+\.
+
+
+--
+-- TOC entry 3199 (class 0 OID 17331)
+-- Dependencies: 215
+-- Data for Name: territory; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.territory (idterritory, nameterritory, squareterritory, typeterritory, lengthterritory, countries_idcountries, states_idstates) FROM stdin;
+141	Тайвань	358625.670	острів	34.700	9	49
+142	Нагірний Карабах	4400.400	регіон	43.300	4	47
+143	Північні Маріанські острови	63.630	острів	52.500	9	44
+150	Острови святої Єлени	2800.000	острів	15.000	6	27
+151	Піткерн	47.300	заморська	67.300	6	13
+152	Острови Кайкос	430.700	острів	51.800	6	13
+153	Теркс	293.200	острів	31.300	6	13
+157	Американське Самоа	197.100	острів	55.400	12	44
+159	Нова Каледонія	18575.300	заморське	24.930	4	16
+160	Французька Полінезія	4176.300	заморське	26.900	4	16
+161	Сен-Мартен	83.000	острів	14.300	12	45
+162	Бонайре	294.000	острів	14.060	12	44
+163	Сінт-Естатіус	21.000	острів	8.430	12	42
+164	Гренландія	21663.320	автономія	69.200	7	21
+165	Фарерські острови	1399.200	архіпелаг	49.700	7	21
+166	Кліппертон	9.000	атол	3.500	3	48
+167	Гернсі	78.000	острів	35.400	8	16
+169	Фолклендські острови	12178.200	острів	73.200	9	10
+170	Мелілья	20.000	порт	18.900	9	27
+171	острови Мадейра	750.700	острів	57.000	12	49
+172	Гонконг	1104.000	район	72.730	11	46
+173	Джарвіс	4.500	острів	2.900	8	22
+174	Кінгмен	0.012	риф	1.300	8	43
+175	Пальміра	12.000	атол	3.900	8	43
+\.
+
+
+--
+-- TOC entry 3242 (class 0 OID 0)
+-- Dependencies: 200
+-- Name: continents_idcontinents_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+--
+
+SELECT pg_catalog.setval('public.continents_idcontinents_seq', 6, true);
+
+
+--
+-- TOC entry 3243 (class 0 OID 0)
+-- Dependencies: 219
+-- Name: copy_states_copy_idstates_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+--
+
+SELECT pg_catalog.setval('public.copy_states_copy_idstates_seq', 1, false);
+
+
+--
+-- TOC entry 3244 (class 0 OID 0)
+-- Dependencies: 210
+-- Name: countries_idcountries_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+--
+
+SELECT pg_catalog.setval('public.countries_idcountries_seq', 24, true);
+
+
+--
+-- TOC entry 3245 (class 0 OID 0)
+-- Dependencies: 208
+-- Name: formsofgovernment_idformsofgovernment_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+--
+
+SELECT pg_catalog.setval('public.formsofgovernment_idformsofgovernment_seq', 6, true);
+
+
+--
+-- TOC entry 3246 (class 0 OID 0)
+-- Dependencies: 206
+-- Name: internationalorganizations_idinternationalorganizations_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+--
+
+SELECT pg_catalog.setval('public.internationalorganizations_idinternationalorganizations_seq', 28, true);
+
+
+--
+-- TOC entry 3247 (class 0 OID 0)
+-- Dependencies: 204
+-- Name: politicalregime_idpoliticalregime_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+--
+
+SELECT pg_catalog.setval('public.politicalregime_idpoliticalregime_seq', 23, true);
+
+
+--
+-- TOC entry 3248 (class 0 OID 0)
+-- Dependencies: 221
+-- Name: rezerv_id_rez_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+--
+
+SELECT pg_catalog.setval('public.rezerv_id_rez_seq', 4, true);
+
+
+--
+-- TOC entry 3249 (class 0 OID 0)
+-- Dependencies: 212
+-- Name: states_idstates_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+--
+
+SELECT pg_catalog.setval('public.states_idstates_seq', 58, true);
+
+
+--
+-- TOC entry 3250 (class 0 OID 0)
+-- Dependencies: 202
+-- Name: status_idstatus_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+--
+
+SELECT pg_catalog.setval('public.status_idstatus_seq', 17, true);
+
+
+--
+-- TOC entry 3251 (class 0 OID 0)
+-- Dependencies: 214
+-- Name: territory_idterritory_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+--
+
+SELECT pg_catalog.setval('public.territory_idterritory_seq', 175, true);
+
+
+--
+-- TOC entry 3000 (class 2606 OID 17207)
+-- Name: continents continents_namecontinents_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.continents
+    ADD CONSTRAINT continents_namecontinents_key UNIQUE (namecontinents);
+
+
+--
+-- TOC entry 3002 (class 2606 OID 17205)
+-- Name: continents continents_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.continents
+    ADD CONSTRAINT continents_pkey PRIMARY KEY (idcontinents);
+
+
+--
+-- TOC entry 3024 (class 2606 OID 17474)
+-- Name: copy_states copy_states_copy_namestates_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.copy_states
+    ADD CONSTRAINT copy_states_copy_namestates_key UNIQUE (copy_namestates);
+
+
+--
+-- TOC entry 3026 (class 2606 OID 17472)
+-- Name: copy_states copy_states_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.copy_states
+    ADD CONSTRAINT copy_states_pkey PRIMARY KEY (copy_idstates);
+
+
+--
+-- TOC entry 3014 (class 2606 OID 17274)
+-- Name: countries countries_namecountries_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.countries
+    ADD CONSTRAINT countries_namecountries_key UNIQUE (namecountries);
+
+
+--
+-- TOC entry 3016 (class 2606 OID 17272)
+-- Name: countries countries_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.countries
+    ADD CONSTRAINT countries_pkey PRIMARY KEY (idcountries);
+
+
+--
+-- TOC entry 3012 (class 2606 OID 17260)
+-- Name: formsofgovernment formsofgovernment_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.formsofgovernment
+    ADD CONSTRAINT formsofgovernment_pkey PRIMARY KEY (idformsofgovernment);
+
+
+--
+-- TOC entry 3010 (class 2606 OID 17248)
+-- Name: internationalorganizations internationalorganizations_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.internationalorganizations
+    ADD CONSTRAINT internationalorganizations_pkey PRIMARY KEY (idinternationalorganizations);
+
+
+--
+-- TOC entry 3008 (class 2606 OID 17240)
+-- Name: politicalregime politicalregime_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.politicalregime
+    ADD CONSTRAINT politicalregime_pkey PRIMARY KEY (idpoliticalregime);
+
+
+--
+-- TOC entry 3028 (class 2606 OID 17493)
+-- Name: rezerv rezerv_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.rezerv
+    ADD CONSTRAINT rezerv_pkey PRIMARY KEY (id_rez);
+
+
+--
+-- TOC entry 3018 (class 2606 OID 17313)
+-- Name: states states_namestates_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.states
+    ADD CONSTRAINT states_namestates_key UNIQUE (namestates);
+
+
+--
+-- TOC entry 3020 (class 2606 OID 17311)
+-- Name: states states_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.states
+    ADD CONSTRAINT states_pkey PRIMARY KEY (idstates);
+
+
+--
+-- TOC entry 3004 (class 2606 OID 17220)
+-- Name: status status_namestatus_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.status
+    ADD CONSTRAINT status_namestatus_key UNIQUE (namestatus);
+
+
+--
+-- TOC entry 3006 (class 2606 OID 17218)
+-- Name: status status_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.status
+    ADD CONSTRAINT status_pkey PRIMARY KEY (idstatus);
+
+
+--
+-- TOC entry 3022 (class 2606 OID 17338)
+-- Name: territory territory_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.territory
+    ADD CONSTRAINT territory_pkey PRIMARY KEY (idterritory);
+
+
+--
+-- TOC entry 3043 (class 2620 OID 17478)
+-- Name: internationalorganizations c_date; Type: TRIGGER; Schema: public; Owner: postgres
+--
+
+CREATE TRIGGER c_date BEFORE INSERT ON public.internationalorganizations FOR EACH ROW EXECUTE FUNCTION public.checks_date();
+
+
+--
+-- TOC entry 3044 (class 2620 OID 17495)
+-- Name: countries tg_delete_countries; Type: TRIGGER; Schema: public; Owner: postgres
+--
+
+CREATE TRIGGER tg_delete_countries BEFORE DELETE ON public.countries FOR EACH ROW EXECUTE FUNCTION public.delete_countries();
+
+
+--
+-- TOC entry 3042 (class 2620 OID 17480)
+-- Name: status tg_valid_data; Type: TRIGGER; Schema: public; Owner: postgres
+--
+
+CREATE TRIGGER tg_valid_data BEFORE INSERT OR UPDATE ON public.status FOR EACH ROW EXECUTE FUNCTION public.valid_data();
+
+
+--
+-- TOC entry 3029 (class 2606 OID 17275)
+-- Name: countries countries_continents_idcontinents_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.countries
+    ADD CONSTRAINT countries_continents_idcontinents_fkey FOREIGN KEY (continents_idcontinents) REFERENCES public.continents(idcontinents) ON UPDATE CASCADE ON DELETE CASCADE;
+
+
+--
+-- TOC entry 3032 (class 2606 OID 17290)
+-- Name: countries countries_formsofgovernment_idformsofgovernment_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.countries
+    ADD CONSTRAINT countries_formsofgovernment_idformsofgovernment_fkey FOREIGN KEY (formsofgovernment_idformsofgovernment) REFERENCES public.formsofgovernment(idformsofgovernment) ON UPDATE CASCADE ON DELETE CASCADE;
+
+
+--
+-- TOC entry 3031 (class 2606 OID 17285)
+-- Name: countries countries_politicalregime_idpoliticalregime_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.countries
+    ADD CONSTRAINT countries_politicalregime_idpoliticalregime_fkey FOREIGN KEY (politicalregime_idpoliticalregime) REFERENCES public.politicalregime(idpoliticalregime) ON UPDATE CASCADE ON DELETE CASCADE;
+
+
+--
+-- TOC entry 3030 (class 2606 OID 17280)
+-- Name: countries countries_status_idstatus_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.countries
+    ADD CONSTRAINT countries_status_idstatus_fkey FOREIGN KEY (status_idstatus) REFERENCES public.status(idstatus) ON UPDATE CASCADE ON DELETE CASCADE;
+
+
+--
+-- TOC entry 3041 (class 2606 OID 17370)
+-- Name: internationalorganizations_has_states internationalorganizations_h_internationalorganizations_i_fkey1; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.internationalorganizations_has_states
+    ADD CONSTRAINT internationalorganizations_h_internationalorganizations_i_fkey1 FOREIGN KEY (internationalorganizations_idinternationalorganizations) REFERENCES public.internationalorganizations(idinternationalorganizations) ON UPDATE CASCADE ON DELETE CASCADE;
+
+
+--
+-- TOC entry 3039 (class 2606 OID 17357)
+-- Name: internationalorganizations_has_countries internationalorganizations_ha_internationalorganizations_i_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.internationalorganizations_has_countries
+    ADD CONSTRAINT internationalorganizations_ha_internationalorganizations_i_fkey FOREIGN KEY (internationalorganizations_idinternationalorganizations) REFERENCES public.internationalorganizations(idinternationalorganizations) ON UPDATE CASCADE ON DELETE CASCADE;
+
+
+--
+-- TOC entry 3038 (class 2606 OID 17352)
+-- Name: internationalorganizations_has_countries internationalorganizations_has_count_countries_idcountries_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.internationalorganizations_has_countries
+    ADD CONSTRAINT internationalorganizations_has_count_countries_idcountries_fkey FOREIGN KEY (countries_idcountries) REFERENCES public.countries(idcountries) ON UPDATE CASCADE ON DELETE CASCADE;
+
+
+--
+-- TOC entry 3040 (class 2606 OID 17365)
+-- Name: internationalorganizations_has_states internationalorganizations_has_states_states_idstates_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.internationalorganizations_has_states
+    ADD CONSTRAINT internationalorganizations_has_states_states_idstates_fkey FOREIGN KEY (states_idstates) REFERENCES public.states(idstates) ON UPDATE CASCADE ON DELETE CASCADE;
+
+
+--
+-- TOC entry 3033 (class 2606 OID 17314)
+-- Name: states states_continents_idcontinents_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.states
+    ADD CONSTRAINT states_continents_idcontinents_fkey FOREIGN KEY (continents_idcontinents) REFERENCES public.continents(idcontinents) ON UPDATE CASCADE ON DELETE CASCADE;
+
+
+--
+-- TOC entry 3035 (class 2606 OID 17324)
+-- Name: states states_formsofgovernment_idformsofgovernment_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.states
+    ADD CONSTRAINT states_formsofgovernment_idformsofgovernment_fkey FOREIGN KEY (formsofgovernment_idformsofgovernment) REFERENCES public.formsofgovernment(idformsofgovernment) ON UPDATE CASCADE ON DELETE CASCADE;
+
+
+--
+-- TOC entry 3034 (class 2606 OID 17319)
+-- Name: states states_politicalregime_idpoliticalregime_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.states
+    ADD CONSTRAINT states_politicalregime_idpoliticalregime_fkey FOREIGN KEY (politicalregime_idpoliticalregime) REFERENCES public.politicalregime(idpoliticalregime) ON UPDATE CASCADE ON DELETE CASCADE;
+
+
+--
+-- TOC entry 3036 (class 2606 OID 17339)
+-- Name: territory territory_countries_idcountries_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.territory
+    ADD CONSTRAINT territory_countries_idcountries_fkey FOREIGN KEY (countries_idcountries) REFERENCES public.countries(idcountries) ON UPDATE CASCADE ON DELETE CASCADE;
+
+
+--
+-- TOC entry 3037 (class 2606 OID 17344)
+-- Name: territory territory_states_idstates_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.territory
+    ADD CONSTRAINT territory_states_idstates_fkey FOREIGN KEY (states_idstates) REFERENCES public.states(idstates) ON UPDATE CASCADE ON DELETE CASCADE;
+
+
+--
+-- TOC entry 3211 (class 0 OID 0)
+-- Dependencies: 201
+-- Name: TABLE continents; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE public.continents TO editor;
+
+
+--
+-- TOC entry 3212 (class 0 OID 0)
+-- Dependencies: 211
+-- Name: TABLE countries; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE public.countries TO editor;
+
+
+--
+-- TOC entry 3213 (class 0 OID 0)
+-- Dependencies: 213
+-- Name: TABLE states; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE public.states TO editor;
+
+
+--
+-- TOC entry 3214 (class 0 OID 0)
+-- Dependencies: 224
+-- Name: TABLE comb; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE public.comb TO editor;
+
+
+--
+-- TOC entry 3215 (class 0 OID 0)
+-- Dependencies: 227
+-- Name: TABLE cont_states; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT SELECT ON TABLE public.cont_states TO usersss;
+GRANT SELECT,INSERT,UPDATE ON TABLE public.cont_states TO editor;
+
+
+--
+-- TOC entry 3217 (class 0 OID 0)
+-- Dependencies: 220
+-- Name: TABLE copy_states; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE public.copy_states TO editor;
+
+
+--
+-- TOC entry 3220 (class 0 OID 0)
+-- Dependencies: 209
+-- Name: TABLE formsofgovernment; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE public.formsofgovernment TO editor;
+
+
+--
+-- TOC entry 3221 (class 0 OID 0)
+-- Dependencies: 228
+-- Name: TABLE forms; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT SELECT ON TABLE public.forms TO usersss;
+GRANT SELECT,INSERT,UPDATE ON TABLE public.forms TO editor;
+
+
+--
+-- TOC entry 3223 (class 0 OID 0)
+-- Dependencies: 207
+-- Name: TABLE internationalorganizations; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE public.internationalorganizations TO editor;
+
+
+--
+-- TOC entry 3224 (class 0 OID 0)
+-- Dependencies: 217
+-- Name: TABLE internationalorganizations_has_states; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE public.internationalorganizations_has_states TO editor;
+
+
+--
+-- TOC entry 3225 (class 0 OID 0)
+-- Dependencies: 226
+-- Name: TABLE int_org_release; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT SELECT ON TABLE public.int_org_release TO usersss;
+GRANT SELECT,INSERT,UPDATE ON TABLE public.int_org_release TO editor;
+
+
+--
+-- TOC entry 3226 (class 0 OID 0)
+-- Dependencies: 216
+-- Name: TABLE internationalorganizations_has_countries; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE public.internationalorganizations_has_countries TO editor;
+
+
+--
+-- TOC entry 3228 (class 0 OID 0)
+-- Dependencies: 223
+-- Name: TABLE list_econom_type; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE public.list_econom_type TO editor;
+
+
+--
+-- TOC entry 3229 (class 0 OID 0)
+-- Dependencies: 230
+-- Name: TABLE list_group_countries; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT SELECT ON TABLE public.list_group_countries TO usersss;
+GRANT SELECT,INSERT,UPDATE ON TABLE public.list_group_countries TO editor;
+
+
+--
+-- TOC entry 3230 (class 0 OID 0)
+-- Dependencies: 205
+-- Name: TABLE politicalregime; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE public.politicalregime TO editor;
+
+
+--
+-- TOC entry 3231 (class 0 OID 0)
+-- Dependencies: 225
+-- Name: TABLE list_states; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE public.list_states TO editor;
+
+
+--
+-- TOC entry 3233 (class 0 OID 0)
+-- Dependencies: 218
+-- Name: TABLE regimes; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE public.regimes TO editor;
+
+
+--
+-- TOC entry 3234 (class 0 OID 0)
+-- Dependencies: 222
+-- Name: TABLE rezerv; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE public.rezerv TO editor;
+
+
+--
+-- TOC entry 3237 (class 0 OID 0)
+-- Dependencies: 229
+-- Name: TABLE states_int_org_80; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT SELECT ON TABLE public.states_int_org_80 TO usersss;
+GRANT SELECT,INSERT,UPDATE ON TABLE public.states_int_org_80 TO editor;
+
+
+--
+-- TOC entry 3238 (class 0 OID 0)
+-- Dependencies: 203
+-- Name: TABLE status; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE public.status TO editor;
+
+
+--
+-- TOC entry 3240 (class 0 OID 0)
+-- Dependencies: 215
+-- Name: TABLE territory; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE public.territory TO editor;
+
+
+-- Completed on 2021-02-05 14:13:00
+
+--
+-- PostgreSQL database dump complete
+--
+
